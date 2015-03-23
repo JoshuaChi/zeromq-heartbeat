@@ -1,0 +1,8 @@
+-define(HEARTBEAT_LIVENESS, 3).
+-define(HEARTBEAT_INTERVAL, 1000).
+-define(HEARTBEAT_DELAY, 2500).
+-define(INTERVAL_INIT, 1000).
+-define(INTERVAL_MAX, 32000).
+-define(SNAPSHOT, <<"ICANHAZ?">>).
+-define(SNAPSHOT_ACK, <<"KTHXBAI?">>).
+-define(HEARTBE_CMD, <<"HEARTBE">>).
