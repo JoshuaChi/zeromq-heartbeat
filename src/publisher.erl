@@ -28,47 +28,47 @@
 %% gen behavior 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 start_link() ->
-    gen_server:start_link({local, publisher}, publisher, [], []).
+    gen_server:start_link({local, publisher}, publisher, [], [{timeout, 3000}]).
 
-init(State) ->
+init([]) ->
     case erlzmq:context() of
       {ok, Context} ->
-        {ok, NewState} = case erlzmq:socket(Context, [router]) of 
+        {ok, State} = case erlzmq:socket(Context, [router]) of 
           {ok, Snapshot} ->
             case erlzmq:bind(Snapshot, "tcp://*:5570") of
               ok ->
                 HeartbeatAt = system_time:get_timestamp() + ?HEARTBEAT_DELAY,
-                {ok, accept_snapshot(State#server_state{zmq_context=Context, snapshot_socket=Snapshot, heartbeat_at=HeartbeatAt})};
+                {ok, accept_snapshot(#server_state{zmq_context=Context, snapshot_socket=Snapshot, heartbeat_at=HeartbeatAt})};
               _ ->
-                {stop, failed_bind_zmq_5570}
+                {stop, {error, failed_bind_zmq_5570 }}
             end;
           _ ->
-            {stop, failed_create_router_socket}
+            {stop,  {error, failed_create_router_socket }}
         end,
         
         case erlzmq:socket(Context, [pub]) of 
           {ok, Publisher} ->
             case erlzmq:bind(Publisher, "tcp://*:5571") of
               ok ->
-                {ok, accept_pub(NewState#server_state{publisher_socket=Publisher})};
+                {ok, accept_pub(State#server_state{publisher_socket=Publisher})};
               _ ->
-                {stop, failed_bind_zmq_5571}
+                {stop,  {error, failed_bind_zmq_5571}}
             end;
           _ ->
-            {stop, failed_create_pub_socket}
+            {stop,  {error, failed_create_pub_socket}}
         end;
             
       _ ->
-        {stop, fail_to_get_zmq_context}
+        {stop,  {error, fail_to_get_zmq_context}}
     end.
 
 
 accept_snapshot(State=#server_state{snapshot_socket=Snapshot}) ->  
-    io:format("State:~p~n", [State]),
     proc_lib:spawn(publisher, accept_snapshot_loop, [self(), Snapshot]),  
     State.  
 
 accept_pub(State =#server_state{publisher_socket=Publisher}) ->  
+    io:format("State:~p~n", [State]),
     proc_lib:spawn(publisher, accept_pub_loop, [self(), Publisher]),  
     State.  
 

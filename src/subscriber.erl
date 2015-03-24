@@ -23,17 +23,17 @@
 start_link() ->
     gen_server:start_link({local, subscriber}, subscriber, [], []).
 
-init(State) ->  
+init([]) ->  
     case erlzmq:context() of
       {ok, Context} ->
-        {ok, NewState} = case erlzmq:socket(Context, [dealer]) of 
+        {ok, State} = case erlzmq:socket(Context, [dealer]) of 
           {ok, Snapshot} ->
             ok = erlzmq:setsockopt(Snapshot, identity, pid_to_list(self())),
             case erlzmq:connect(Snapshot, "tcp://localhost:5570") of
               ok ->
                 erlzmq:send(Snapshot, <<"ICANHAZ?">>),
                 HeartbeatAt = system_time:get_timestamp() + ?HEARTBEAT_DELAY,
-                {ok, accept_snapshot(State#server_state{zmq_context=Context, snapshot_socket=Snapshot, heartbeat_at=HeartbeatAt})};
+                {ok, accept_snapshot(#server_state{zmq_context=Context, snapshot_socket=Snapshot, heartbeat_at=HeartbeatAt})};
               _ ->
                 {stop, failed_connect_zmq_5570}
             end;
@@ -46,7 +46,7 @@ init(State) ->
             case erlzmq:connect(Subscriber, "tcp://localhost:5571") of
               ok ->
                 ok = erlzmq:setsockopt(Subscriber, subscribe, <<"B">>),
-                {ok, accept_sub(NewState#server_state{subscriber_socket=Subscriber})};
+                {ok, accept_sub(State#server_state{subscriber_socket=Subscriber})};
               _ ->
                 {stop, failed_connect_zmq_5571}
             end;
