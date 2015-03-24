@@ -63,7 +63,8 @@ init(State) ->
     end.
 
 
-accept_snapshot(State =#server_state{snapshot_socket=Snapshot}) ->  
+accept_snapshot(State=#server_state{snapshot_socket=Snapshot}) ->  
+    io:format("State:~p~n", [State]),
     proc_lib:spawn(publisher, accept_snapshot_loop, [self(), Snapshot]),  
     State.  
 

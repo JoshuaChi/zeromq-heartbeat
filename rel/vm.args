@@ -1,0 +1,4 @@
+-mnesia dir '\"/Users/jchi/wio\"'
+-name tncfeed@jchimac.thenetcircle.lab
+-setcookie wio
+-heart

@@ -1,0 +1,13 @@
+{application, wio, [
+	{description, ""},
+	{vsn, "0.1.0"},
+	{modules, []},
+	{registered, []},
+	{applications, [
+		kernel,
+		stdlib,
+    sync
+	]},
+	{mod, {wio_app, []}},
+	{env, []}
+]}.
