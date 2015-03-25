@@ -45,7 +45,7 @@ init([]) ->
           {ok, Subscriber} ->
             case erlzmq:connect(Subscriber, "tcp://localhost:5571") of
               ok ->
-                ok = erlzmq:setsockopt(Subscriber, subscribe, <<"B">>),
+                ok = erlzmq:setsockopt(Subscriber, subscribe, ?ROUTER_WIO),
                 {ok, accept_sub(State#server_state{subscriber_socket=Subscriber})};
               _ ->
                 {stop, failed_connect_zmq_5571}
@@ -76,15 +76,14 @@ accept_sub_loop(Server, _SubscriberSocket) ->
     gen_server:cast(Server, {accept_sub_new, self()}).
 
 handle_cast({accept_snapshot_new, _FromPid}, State=#server_state{snapshot_socket=SnapshotSocket})->
-  {ok, Identify} = erlzmq:recv(SnapshotSocket),
-  io:format("s::accept_snapshot_new Identify:~p~n", [Identify]),
-  %% Read message contents
-  
-  case erlzmq:recv(SnapshotSocket, [dontwait]) of
+  case erlzmq:recv(SnapshotSocket) of
     {ok, ?HEARTBEAT_CMD} ->
-      io:format("s:Get client heart beat, client is still alive.~n", []);
-    {ok, Contents} ->
-      io:format("s::accept_snapshot_new [~s] ~s~n", [Identify, Contents]);
+      io:format("s:Get server heart beat, server is still alive.~n", []);
+    {ok, ?SNAPSHOT_ACK} ->
+      io:format("s:now we should handle sequences.~n", []);
+    {ok, Key} ->
+      {ok, Value} = erlzmq:recv(SnapshotSocket),
+      io:format("s::accept_snapshot_new Key:~p:Value:~p~n", [Key, Value]);
     _ ->
       nothing
   end,
@@ -94,11 +93,11 @@ handle_cast({accept_snapshot_new, _FromPid}, State=#server_state{snapshot_socket
   
   
 handle_cast({accept_sub_new, _FromPid}, State=#server_state{subscriber_socket=SubscriberSocket})->
-  {ok, Address} = erlzmq:recv(SubscriberSocket),
-  io:format("s::accept_sub_new Address:~p~n", [Address]),
+  {ok, Key} = erlzmq:recv(SubscriberSocket),
+  io:format("s::accept_sub_new Key:~p~n", [Key]),
   %% Read message contents
-  {ok, Contents} = erlzmq:recv(SubscriberSocket, [dontwait]),
-  io:format("s::accept_sub_new [~s] ~s~n", [Address, Contents]),
+  {ok, Value} = erlzmq:recv(SubscriberSocket),
+  io:format("s::accept_sub_new [~s] ~s~n", [Key, Value]),
   
   _Pid = proc_lib:spawn(subscriber, accept_sub_loop, [self(), SubscriberSocket]),
   {noreply, State};
@@ -116,56 +115,4 @@ handle_info(_Info, State) ->
 code_change(_OldVsn, State, _Extra) ->
   {ok, State}.
 terminate(normal, _State) ->
-    ok.  
-
-
-
-
-% main() ->
-%
-%     %% Prepare our context and subscriber
-%     {ok, Context} = erlzmq:context(),
-%
-%     {ok, Snapshot} = erlzmq:socket(Context, dealer),
-%     ok = erlzmq:setsockopt(Snapshot, identity, pid_to_list(self())),
-%     ok = erlzmq:connect(Snapshot, "tcp://localhost:5570"),
-%     erlzmq:send(Snapshot, <<"ICANHAZ?">>),
-%
-%     {ok, Subscriber} = erlzmq:socket(Context, sub),
-%     ok = erlzmq:connect(Subscriber, "tcp://localhost:5571"),
-%     ok = erlzmq:setsockopt(Subscriber, subscribe, <<"B">>),
-%
-%
-%     loop(Snapshot, Subscriber),
-%
-%     ok = erlzmq:term(Context).
-%
-%
-% loop(Snapshot, Subscriber) ->
-%     process_tasks(Snapshot),
-%     process_tasks(Subscriber),
-%     loop(Snapshot, Subscriber).
-%
-% process_tasks(Socket) ->
-%     %% Read envelope with address
-%     {ok, Address} = erlzmq:recv(Socket),
-%     io:format("Address:~p~n", [Address]),
-%     %% Read message contents
-%     {ok, Contents} = erlzmq:recv(Socket),
-%     io:format("[~s] ~s~n", [Address, Contents]).
-
-% client_loop(Client, RequestNbr) ->
-%     %% Tick once per second, pulling in arriving messages (check 100 times
-%     %% using 10 poll delay for each call)
-%     client_check_messages(Client, 100, 10),
-%     Msg = list_to_binary(io_lib:format("request #~b", [RequestNbr])),
-%     erlzmq:send(Client, Msg),
-%     client_loop(Client, RequestNbr + 1).
-%
-% client_check_messages(_Client, 0, _PollDelay) -> ok;
-% client_check_messages(Client, N, PollDelay) when N > 0 ->
-%     case erlzmq:recv(Client, [noblock]) of
-%         {ok, Msg} -> io:format("~s [~p]~n", [Msg, self()]);
-%         {error, eagain} -> timer:sleep(PollDelay)
-%     end,
-%     client_check_messages(Client, N - 1, PollDelay).
+    ok.

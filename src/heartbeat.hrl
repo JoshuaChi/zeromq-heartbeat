@@ -5,4 +5,5 @@
 -define(INTERVAL_MAX, 32000).
 -define(SNAPSHOT, <<"ICANHAZ?">>).
 -define(SNAPSHOT_ACK, <<"KTHXBAI?">>).
--define(HEARTBEAT_CMD, <<"HEARTBEAT">>).
+-define(HEARTBEAT_CMD, <<"HUGZ">>).
+-define(ROUTER_WIO, <<"WIO">>).

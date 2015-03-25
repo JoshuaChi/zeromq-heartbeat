@@ -67,13 +67,11 @@ accept_snapshot(State=#server_state{snapshot_socket=Snapshot}) ->
     proc_lib:spawn(publisher, accept_snapshot_loop, [self(), Snapshot]),  
     State.  
 
-accept_pub(State =#server_state{publisher_socket=Publisher}) ->  
-    % io:format("p:State:~p~n", [State]),
+accept_pub(State =#server_state{publisher_socket=Publisher}) ->
     proc_lib:spawn(publisher, accept_pub_loop, [self(), Publisher]),  
     State.  
 
-accept_snapshot_loop(Server, _SnapshotSocket) ->  
-    % io:format("p:>>>>accept_snapshot_loop<<<~n", []),
+accept_snapshot_loop(Server, _SnapshotSocket) ->
     gen_server:cast(Server, {accept_snapshot_new,self()}).
 
 heartbeat_loop(Server, Identify) ->
@@ -86,11 +84,14 @@ handle_cast({accept_snapshot_new, _FromPid}, State=#server_state{snapshot_socket
   {ok, Identify} = erlzmq:recv(SnapshotSocket),
   NewState = case erlzmq:recv(SnapshotSocket) of
     {ok, ?SNAPSHOT} ->
-      % ok = erlzmq:setsockopt(Snapshot, identity, pid_to_list(self())),
       ok = erlzmq:send(SnapshotSocket, Identify, [sndmore]),
-      ok = erlzmq:send(SnapshotSocket, <<"89">>),
+      ok = erlzmq:send(SnapshotSocket, <<"key">>),
+      ok = erlzmq:send(SnapshotSocket, Identify, [sndmore]),
+      ok = erlzmq:send(SnapshotSocket, <<"value">>),
       ok = erlzmq:send(SnapshotSocket, Identify, [sndmore]),
       ok = erlzmq:send(SnapshotSocket, ?SNAPSHOT_ACK),
+      ok = erlzmq:send(SnapshotSocket, Identify, [sndmore]),
+      ok = erlzmq:send(SnapshotSocket, <<0>>),
       % io:format("p:Publish snamshots.~n", []),
       State;
     {ok, ?HEARTBEAT_CMD} ->
@@ -107,7 +108,7 @@ handle_cast({send_heartbeat, _FromPid, Identify}, State=#server_state{snapshot_s
   Now = system_time:get_timestamp(),
   NewState = case Now > HeartbeatAt of
     true ->
-      io:format("PPPP..~n", []),
+      io:format("P:~p.~n", [Identify]),
       ok = erlzmq:send(SnapshotSocket, Identify, [sndmore]),
       ok = erlzmq:send(SnapshotSocket, ?HEARTBEAT_CMD),
       % io:format("p:Publish heartbeat from publisher.~n",[]),
@@ -119,22 +120,10 @@ handle_cast({send_heartbeat, _FromPid, Identify}, State=#server_state{snapshot_s
   _Pid = proc_lib:spawn(publisher, heartbeat_loop, [self(), Identify]),
   {noreply, NewState};
   
-handle_cast({accept_pub_new, _FromPid},State=#server_state{publisher_socket=PublisherSocket})->  
-  % case erlzmq:recv(PublisherSocket) of
-  %   % if get heartbeat command, it means client still alive, we do nothing
-  %   {ok, ?HEARTBEAT_CMD} ->
-  %     % HeartbeatAt = system_time:get_timestamp() + ?HEARTBEAT_DELAY,
-  %     io:format("p:get heartbeat command.~n", []);
-  %     % State#server_state{heartbeat_at=HeartbeatAt};
-  %   _ ->
-  %     ignore_others_for_now
-  % end,
-  
-  % send pubs,
-  % io:format("p:sending pubs.", []),
+handle_cast({accept_pub_new, _FromPid},State=#server_state{publisher_socket=PublisherSocket})->
   ok = erlzmq:send(PublisherSocket, <<"A">>, [sndmore]),
   ok = erlzmq:send(PublisherSocket, <<"We don't want to see this">>),
-  ok = erlzmq:send(PublisherSocket, <<"B">>, [sndmore]),
+  ok = erlzmq:send(PublisherSocket, ?ROUTER_WIO, [sndmore]),
   ok = erlzmq:send(PublisherSocket, <<"We would like to see this">>),  
   
   _Pid = proc_lib:spawn(publisher, accept_pub_loop, [self(), PublisherSocket]),
@@ -153,63 +142,4 @@ handle_info(_Info, State) ->
 code_change(_OldVsn, State, _Extra) ->
   {ok, State}.
 terminate(normal, _State) ->
-    ok.  
-
-            
-            
-% Heaatbeat is two way communications. 
-% Client send heartbeat every second if there is no message receive;[ROUTER]
-% Server send heartbeat every second if there is no message send;[DEALER]
-% Client will treat server died if no message or heartbeat received during heartbeat liveness;
-% Server will treat client not connected if no message or heartbeat received during heartbeat liveness; It can try reconnect or do anything.
-% // If liveness hits zero, queue is considered disconnected
-% liveness = HEARTBEAT_LIVENESS;
-% heartbeatAt = System.currentTimeMillis() + heartbeat;
-
-% main() ->
-%     %% Prepare our context and publisher
-%     {ok, Context} = erlzmq:context(),
-%     % But before that, what about gen_udp:open/2? The second argument can be a list of options, specifying in what type we want to receive data (list or binary), how we want them received; as messages ({active, true}) or as results of a function call ({active, false}). There are more options such as whether the socket should be set with IPv4 (inet4) or IPv6 (inet6), whether the UDP socket can be used to broadcast information ({broadcast, true | false}), the size of buffers, etc. There are more options available, but we'll stick to the simple stuff for now because understanding the rest is rather up to you to learn. The topic can become complex fast and this guide is about Erlang, not TCP and UDP, unfortunately.
-%     % {ok, Snapshot} = erlzmq:socket(Context, [router, {active, true}]),
-%     {ok, Snapshot} = erlzmq:socket(Context, [router]),
-%     ok = erlzmq:bind(Snapshot, "tcp://*:5570"),
-%
-%     {ok, Publisher} = erlzmq:socket(Context, pub),
-%     ok = erlzmq:bind(Publisher, "tcp://*:5571"),
-%     loop(Snapshot, Publisher),
-%
-%
-%     ok = erlzmq:term(Context).
-%
-% loop(Snapshot, Publisher) ->
-%     perform(Snapshot),
-%     perform_pub(Publisher),
-%     loop(Snapshot, Publisher).
-%
-% perform_pub(Publisher) ->
-%     %% Write two messages, each with an envelope and content
-%     ok = erlzmq:send(Publisher, <<"A">>, [sndmore]),
-%     io:format("We don't want to see this~n", []),
-%     ok = erlzmq:send(Publisher, <<"We don't want to see this">>),
-%     ok = erlzmq:send(Publisher, <<"B">>, [sndmore]),
-%     ok = erlzmq:send(Publisher, <<"We would like to see this">>),
-%     timer:sleep(1000).
-%
-%
-% perform(Snapshot) ->
-%     {ok, Identify} = erlzmq:recv(Snapshot),
-%     case erlzmq:recv(Snapshot) of
-%       {ok, ?SNAPSHOT} ->
-%         % ok = erlzmq:setsockopt(Snapshot, identity, pid_to_list(self())),
-%         ok = erlzmq:send(Snapshot, Identify, [sndmore]),
-%         ok = erlzmq:send(Snapshot, <<"89">>),
-%         ok = erlzmq:send(Snapshot, Identify, [sndmore]),
-%         ok = erlzmq:send(Snapshot, ?SNAPSHOT_ACK);
-%       {ok, ?HEARTBEAT} ->
-%         HeartbeatAt = system_time:get_timestamp() + ?HEARTBEAT_DELAY;
-%       _ ->
-%         nothing
-%     end,
-%
-%     timer:sleep(1000).
-%
+    ok.
