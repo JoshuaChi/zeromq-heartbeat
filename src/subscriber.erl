@@ -65,42 +65,40 @@ accept_snapshot(State =#server_state{snapshot_socket=Snapshot}) ->
 
 accept_sub(State =#server_state{subscriber_socket=Subscriber}) ->  
     ok = erlzmq:setsockopt(Subscriber, subscribe, <<"B">>),
-    proc_lib:spawn(subscriber, accept_sub_loop, [self(), Subscriber]),  
+    proc_lib:spawn(subscriber, accept_sub_loop, [self(), Subscriber]),
     State.  
 
 accept_snapshot_loop(Server, _SnapshotSocket) ->  
+    % io:format("s::>>>>accept_snapshot_loop<<<~n", []),
     gen_server:cast(Server, {accept_snapshot_new, self()}).
-
+    
 accept_sub_loop(Server, _SubscriberSocket) ->  
     gen_server:cast(Server, {accept_sub_new, self()}).
 
-handle_cast({accept_snapshot_new, _FromPid}, State=#server_state{snapshot_socket=SnapshotSocket, heartbeat_at=HeartbeatAt})->
-
-  {ok, Address} = erlzmq:recv(SnapshotSocket),
-  io:format("accept_snapshot_new Address:~p~n", [Address]),
+handle_cast({accept_snapshot_new, _FromPid}, State=#server_state{snapshot_socket=SnapshotSocket})->
+  {ok, Identify} = erlzmq:recv(SnapshotSocket),
+  io:format("s::accept_snapshot_new Identify:~p~n", [Identify]),
   %% Read message contents
-  {ok, Contents} = erlzmq:recv(SnapshotSocket),
-  io:format("accept_snapshot_new [~s] ~s~n", [Address, Contents]),
-
-  _Pid = proc_lib:spawn(subscriber, accept_snapshot_loop, [self(), SnapshotSocket]),
   
-  Now = system_time:get_timestamp(),
-  NewState = case Now > HeartbeatAt of
-    true ->
-      ok = erlzmq:send(SnapshotSocket, ?HEARTBE_CMD),
-      State#server_state{heartbeat_at=Now};
+  case erlzmq:recv(SnapshotSocket, [dontwait]) of
+    {ok, ?HEARTBEAT_CMD} ->
+      io:format("s:Get client heart beat, client is still alive.~n", []);
+    {ok, Contents} ->
+      io:format("s::accept_snapshot_new [~s] ~s~n", [Identify, Contents]);
     _ ->
-      State
+      nothing
   end,
   
-  {noreply, NewState};
-
+  _Pid = proc_lib:spawn(subscriber, accept_snapshot_loop, [self(), SnapshotSocket]),
+  {noreply, State};
+  
+  
 handle_cast({accept_sub_new, _FromPid}, State=#server_state{subscriber_socket=SubscriberSocket})->
   {ok, Address} = erlzmq:recv(SubscriberSocket),
-  io:format("accept_sub_new Address:~p~n", [Address]),
+  io:format("s::accept_sub_new Address:~p~n", [Address]),
   %% Read message contents
-  {ok, Contents} = erlzmq:recv(SubscriberSocket),
-  io:format("accept_sub_new [~s] ~s~n", [Address, Contents]),
+  {ok, Contents} = erlzmq:recv(SubscriberSocket, [dontwait]),
+  io:format("s::accept_sub_new [~s] ~s~n", [Address, Contents]),
   
   _Pid = proc_lib:spawn(subscriber, accept_sub_loop, [self(), SubscriberSocket]),
   {noreply, State};
