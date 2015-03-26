@@ -12,7 +12,7 @@
 -import(system_time, [get_timestamp/0]).
 
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
--export([start_link/0, accept_snapshot_loop/2, accept_pub_loop/2, heartbeat_loop/2]).
+-export([start_link/0, accept_snapshot_loop/2, accept_pub_loop/2]).
 
 
 -record(server_state, {  
@@ -28,7 +28,7 @@
 %% gen behavior 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 start_link() ->
-    gen_server:start_link({local, publisher}, publisher, [], [{timeout, 3000}]).
+    gen_server:start_link({local, publisher}, publisher, [], [{timeout, 30000}]).
 
 init([]) ->
     case erlzmq:context() of
@@ -63,26 +63,23 @@ init([]) ->
     end.
 
 
-accept_snapshot(State=#server_state{snapshot_socket=Snapshot}) ->  
-    proc_lib:spawn(publisher, accept_snapshot_loop, [self(), Snapshot]),  
+accept_snapshot(State=#server_state{snapshot_socket=Snapshot}) -> 
+    proc_lib:spawn(publisher, accept_snapshot_loop, [self(), Snapshot]), 
     State.  
 
 accept_pub(State =#server_state{publisher_socket=Publisher}) ->
     proc_lib:spawn(publisher, accept_pub_loop, [self(), Publisher]),  
     State.  
 
-accept_snapshot_loop(Server, _SnapshotSocket) ->
-    gen_server:cast(Server, {accept_snapshot_new,self()}).
-
-heartbeat_loop(Server, Identify) ->
-    gen_server:cast(Server, {send_heartbeat, self(), Identify}).
+accept_snapshot_loop(Server, _Snapshot) ->  
+    gen_server:cast(Server, {accept_snapshot_new,self(), <<"solr">>}).
 
 accept_pub_loop(Server, _PublisherSocket) ->  
     gen_server:cast(Server, {accept_pub_new,self()}).
 
-handle_cast({accept_snapshot_new, _FromPid}, State=#server_state{snapshot_socket=SnapshotSocket})->
-  {ok, Identify} = erlzmq:recv(SnapshotSocket),
-  NewState = case erlzmq:recv(SnapshotSocket) of
+handle_cast({accept_snapshot_new, _FromPid, Identify}, State=#server_state{snapshot_socket=SnapshotSocket, heartbeat_at=HeartbeatAt})->
+  io:format("P.....~n", []),
+  case erlzmq:recv(SnapshotSocket, [dontwait]) of
     {ok, ?SNAPSHOT} ->
       ok = erlzmq:send(SnapshotSocket, Identify, [sndmore]),
       ok = erlzmq:send(SnapshotSocket, <<"key">>),
@@ -91,24 +88,17 @@ handle_cast({accept_snapshot_new, _FromPid}, State=#server_state{snapshot_socket
       ok = erlzmq:send(SnapshotSocket, Identify, [sndmore]),
       ok = erlzmq:send(SnapshotSocket, ?SNAPSHOT_ACK),
       ok = erlzmq:send(SnapshotSocket, Identify, [sndmore]),
-      ok = erlzmq:send(SnapshotSocket, <<0>>),
-      % io:format("p:Publish snamshots.~n", []),
-      State;
+      ok = erlzmq:send(SnapshotSocket, <<0>>);
     {ok, ?HEARTBEAT_CMD} ->
       io:format("p:Get client heart beat, client is still alive.~n", []);
     _ ->
-      State
+      nothing
   end,
   
-  _Pid = proc_lib:spawn(publisher, heartbeat_loop, [self(), Identify]),
-  {noreply, NewState};
-
-
-handle_cast({send_heartbeat, _FromPid, Identify}, State=#server_state{snapshot_socket=SnapshotSocket, heartbeat_at=HeartbeatAt})->
   Now = system_time:get_timestamp(),
   NewState = case Now > HeartbeatAt of
     true ->
-      io:format("P:~p.~n", [Identify]),
+      io:format("P:send heartbeat~p.~n", [Identify]),
       ok = erlzmq:send(SnapshotSocket, Identify, [sndmore]),
       ok = erlzmq:send(SnapshotSocket, ?HEARTBEAT_CMD),
       % io:format("p:Publish heartbeat from publisher.~n",[]),
@@ -117,8 +107,10 @@ handle_cast({send_heartbeat, _FromPid, Identify}, State=#server_state{snapshot_s
       State
   end,
   
-  _Pid = proc_lib:spawn(publisher, heartbeat_loop, [self(), Identify]),
+    timer:sleep(?LOOP_SLEEP),
+  _Pid = proc_lib:spawn(publisher, accept_snapshot_loop, [self(), Identify]),
   {noreply, NewState};
+
   
 handle_cast({accept_pub_new, _FromPid},State=#server_state{publisher_socket=PublisherSocket})->
   ok = erlzmq:send(PublisherSocket, <<"A">>, [sndmore]),
