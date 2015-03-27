@@ -86,9 +86,7 @@ handle_cast({accept_snapshot_new, _FromPid, Identify}, State=#server_state{snaps
       ok = erlzmq:send(SnapshotSocket, Identify, [sndmore]),
       ok = erlzmq:send(SnapshotSocket, <<"value">>),
       ok = erlzmq:send(SnapshotSocket, Identify, [sndmore]),
-      ok = erlzmq:send(SnapshotSocket, ?SNAPSHOT_ACK),
-      ok = erlzmq:send(SnapshotSocket, Identify, [sndmore]),
-      ok = erlzmq:send(SnapshotSocket, <<0>>);
+      ok = erlzmq:send(SnapshotSocket, ?SNAPSHOT_ACK);
     {ok, ?HEARTBEAT_CMD} ->
       io:format("p:Get client heart beat, client is still alive.~n", []);
     _ ->

@@ -6,7 +6,7 @@
 -import(system_time, [get_timestamp/0]).
 
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
--export([start_link/0, accept_snapshot_loop/2, accept_sub_loop/2]).
+-export([start_link/0, accept_snapshot_loop/2, accept_sub_loop/2, process_more_snapshot/2]).
 
 
 -record(server_state, {  
@@ -75,22 +75,22 @@ accept_snapshot_loop(Server, _SnapshotSocket) ->
 accept_sub_loop(Server, _SubscriberSocket) ->  
     gen_server:cast(Server, {accept_sub_new, self()}).
 
-handle_cast({accept_snapshot_new, _FromPid}, State=#server_state{snapshot_socket=SnapshotSocket, heartbeat_at=HeartbeatAt})->
-  io:format("S.....~n", []),
+process_more_snapshot({ok, V}, State=#server_state{snapshot_socket=Socket, heartbeat_at=HeartbeatAt}) ->
   Now = system_time:get_timestamp(),
-  NewState = case erlzmq:recv(SnapshotSocket, [dontwait]) of
+  io:format("Now:~p~n", [Now]),
+  case erlzmq:recv(Socket, [dontwait]) of 
     {ok, ?HEARTBEAT_CMD} ->
       io:format("s:Get server heart beat, server is still alive.~n", []),
       State#server_state{heartbeat_at = (Now + ?HEARTBEAT_DELAY)};
     {ok, ?SNAPSHOT_ACK} ->
       io:format("s:now we should handle sequences.~n", []),
       State;
-    {ok, Key} ->
-      {ok, Value} = erlzmq:recv(SnapshotSocket),
-      io:format("s::accept_snapshot_new Key:~p:Value:~p~n", [Key, Value]),
+    {ok, Value} ->
+      io:format("s::process_more_snapshot V:~p:Value:~p~n", [V, Value]),
+      process_more_snapshot(erlzmq:getsockopt(Socket, rcvmore), Socket),
       State;
     {error, _Reason}->
-      case Now - HeartbeatAt > 10 of
+      case (Now - HeartbeatAt) > 10 of
         true ->
           io:format("s:server lost connection.------------ NOW:~p=HeartbeatAt:~p~n",[Now, HeartbeatAt]);
         _ ->
@@ -98,9 +98,16 @@ handle_cast({accept_snapshot_new, _FromPid}, State=#server_state{snapshot_socket
       end,
       State;
     _ ->
-      io:format("cat others.", [])
-  end,
+      io:format("cat others.", []),
+      State
+  end;
   
+process_more_snapshot(_,  State) ->
+  State.
+  
+handle_cast({accept_snapshot_new, _FromPid}, State=#server_state{snapshot_socket=SnapshotSocket})->
+  io:format("S.....~n", []),
+  NewState = process_more_snapshot(erlzmq:getsockopt(SnapshotSocket, rcvmore), State),
   
   timer:sleep(?LOOP_SLEEP),
   _Pid = proc_lib:spawn(subscriber, accept_snapshot_loop, [self(), SnapshotSocket]),
