@@ -131,5 +131,6 @@ handle_info(_Info, State) ->
   {noreply, State}.
 code_change(_OldVsn, State, _Extra) ->
   {ok, State}.
-terminate(normal, _State) ->
-    ok.
+terminate(normal, _State=#server_state{zmq_context=Context}) ->
+   ok = erlzmq:term(Context),
+   ok.

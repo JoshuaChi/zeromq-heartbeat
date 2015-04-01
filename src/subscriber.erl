@@ -68,41 +68,44 @@ accept_snapshot(State =#server_state{snapshot_socket=Snapshot}) ->
 accept_sub(State =#server_state{subscriber_socket=Subscriber}) ->  
     ok = erlzmq:setsockopt(Subscriber, subscribe, <<"B">>),
     Pid = proc_lib:spawn_link(?MODULE, accept_sub_loop, [?MODULE, Subscriber]),
-    io:format("s:accept_sub:PID:~p~n", [Pid]),
+    io:format("s:accept_sub(PID:~p)~n", [Pid]),
     State.  
 
-accept_snapshot_loop(Server, _SnapshotSocket) ->  
-    io:format("s::>>>>accept_snapshot_loop<<<~n", []),
+accept_snapshot_loop(Server, SnapshotSocket) ->  
+    io:format("s::accept_snapshot_loop<~p>~n", [self()]),
     ok = gen_server:cast(?MODULE, {accept_snapshot_new, Server}),
-    io:format("s::>>>> end of accept_snapshot_loop<<<~n", []).
+    timer:sleep(4000),
+    io:format("s::accept_snapshot_loop[leave]<~p>~n", [self()]),
+    accept_snapshot_loop(Server, SnapshotSocket).
     
 accept_sub_loop(Server, _SubscriberSocket) ->  
     gen_server:cast(?MODULE, {accept_sub_new, Server}).
 
 process_more_snapshot({ok, V}, State=#server_state{snapshot_socket=Socket, heartbeat_at=HeartbeatAt}) -> 
-  io:format("s:comming..................~n",[]),
+  io:format("s:process_more_snapshot(V:~p)~n",[V]),
   case erlzmq:getsockopt(Socket, events) of
     {ok, ?TNC_ZMQ_POLLIN} ->
       Now = system_time:get_timestamp(),
-      io:format("Now:~p~n", [Now]),
-      io:format("s: consume queue messages.~n", []),
-      case erlzmq:recv(Socket) of 
+      % io:format("Now:~p~n", [Now]),
+      NewState = case erlzmq:recv(Socket) of 
         {ok, ?HEARTBEAT_CMD} ->
-          io:format("s:Get server heart beat, server is still alive.~n", []),
+          % io:format("s:Get server heart beat, server is still alive.~n", []),
           State#server_state{heartbeat_at = (Now + ?HEARTBEAT_DELAY)};
         {ok, ?SNAPSHOT_ACK} ->
-          io:format("s:now we should handle sequences.~n", []),
+          % io:format("s:now we should handle sequences.~n", []),
           State;
-        {ok, Value} ->
-          io:format("s::process_more_snapshot V:~p:Value:~p~n", [V, Value]),
+        {ok, _Value} ->
+          % io:format("s::process_more_snapshot V:~p:Value:~p~n", [V, Value]),
           process_more_snapshot(erlzmq:getsockopt(Socket, rcvmore), Socket),
           State;
         {error, _Reason}->
           State;
         _ ->
-          io:format("cat others.", []),
+          % io:format("cat others.", []),
           State
-      end;
+      end,
+      io:format("s:process_more_snapshot[leave]:: TNC_ZMQ_POLLIN.~n",[]),
+      NewState;
     {ok, ?TNC_ZMQ_POLLOUT} ->
       Now = system_time:get_timestamp(),
       case (Now - HeartbeatAt) > 10 of
@@ -112,32 +115,55 @@ process_more_snapshot({ok, V}, State=#server_state{snapshot_socket=Socket, heart
           do_nothing
       end,
       timer:sleep(?LOOP_SLEEP),
+      io:format("s:process_more_snapshot[leave]:: TNC_ZMQ_POLLOUT.~n",[]),
       State;
     _ ->
-      io:format("s:strange~n",[]),
+      io:format("s:process_more_snapshot[leave]:: _.~n",[]),
       State
   end;      
   
 process_more_snapshot(_,  State) ->
-  io:format("s:late..................~n",[]),
+  io:format("s:process_more_snapshot[skip]~n",[]),
   State.
   
 handle_cast({accept_snapshot_new, FromPid}, State=#server_state{snapshot_socket=SnapshotSocket})->
-  io:format("s:accept_snapshot_new(FromPid:~p).~n", [FromPid]),
+  io:format("s:accept_snapshot_new(FromPid:~p, MYID:~p).~n", [FromPid, self()]),
   NewState = process_more_snapshot(erlzmq:getsockopt(SnapshotSocket, rcvmore), State),
-  io:format("going to loop accept_snapshot_loop.~n", []),
-  Pid = proc_lib:spawn_link(subscriber, accept_snapshot_loop, [?MODULE, SnapshotSocket]),
-  io:format("s:pid:~p.self():~p~n", [Pid, ?MODULE]),
+  % io:format("going to loop accept_snapshot_loop.~n", []),
+  % Pid = proc_lib:spawn_link(subscriber, accept_snapshot_loop, [?MODULE, SnapshotSocket]),
+  % io:format("s:pid:~p.self():~p~n", [Pid, ?MODULE]),
   {noreply, NewState};
   
   
 handle_cast({accept_sub_new, _FromPid}, State=#server_state{subscriber_socket=SubscriberSocket})->
-  {ok, _Key} = erlzmq:recv(SubscriberSocket),
-  % io:format("s::accept_sub_new Key:~p~n", [Key]),
+  
+  case erlzmq:recv(SubscriberSocket, [dontwait]) of
+    {ok, _Key} ->
+      k;
+      % io:format("s::accept_sub_new (ok:~p)~n", [Key]);
+    {error, _Reason} ->
+      e;
+      % io:format("s::accept_sub_new (error:~p)~n", [Reason]);
+    _ ->
+      o
+      % io:format("others:~n", [])
+  end,
   %% Read message contents
-  {ok, _Value} = erlzmq:recv(SubscriberSocket),
+  
+  case erlzmq:recv(SubscriberSocket, [dontwait]) of
+    {ok, _Value} ->
+      k;
+      % io:format("s::accept_sub_new (ok:~p)~n", [Value]);
+    {error, _Reason2} ->
+      e;
+      % io:format("s::accept_sub_new (error:~p)~n", [Reason2]);
+    _ ->
+      o
+      % io:format("others:~n", [])
+    end,
   % io:format("s::accept_sub_new [~s] ~s~n", [Key, Value]),
 
+  timer:sleep(?LOOP_SLEEP),
   Pid = proc_lib:spawn_link(subscriber, accept_sub_loop, [?MODULE, SubscriberSocket]),
   io:format("s:accept_sub_new:PID:~p~n", [Pid]),
   {noreply, State};
@@ -165,6 +191,7 @@ handle_info(_Info, State) ->
 code_change(_OldVsn, State, _Extra) ->
   io:format("s:code_change..................~n",[]),
   {ok, State}.
-terminate(normal, _State) ->
+terminate(normal, _State=#server_state{zmq_context=Context}) ->
+  ok = erlzmq:term(Context),
   io:format("s:terminate..................~n",[]),
-    ok.
+  ok.
