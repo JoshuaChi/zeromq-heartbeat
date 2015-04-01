@@ -7,4 +7,6 @@
 -define(SNAPSHOT, <<"ICANHAZ?">>).
 -define(SNAPSHOT_ACK, <<"KTHXBAI?">>).
 -define(HEARTBEAT_CMD, <<"HUGZ">>).
+-define(TNC_ZMQ_POLLIN, 3).
+-define(TNC_ZMQ_POLLOUT, 2).
 -define(ROUTER_WIO, <<"WIO">>).
