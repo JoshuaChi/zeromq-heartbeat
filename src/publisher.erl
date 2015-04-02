@@ -78,7 +78,6 @@ accept_pub_loop(Server, _PublisherSocket) ->
     gen_server:cast(Server, {accept_pub_new,self()}).
 
 handle_cast({accept_snapshot_new, _FromPid, Identify}, State=#server_state{snapshot_socket=SnapshotSocket, heartbeat_at=HeartbeatAt})->
-  io:format("P.....~n", []),
   case erlzmq:recv(SnapshotSocket, [dontwait]) of
     {ok, ?SNAPSHOT} ->
       ok = erlzmq:send(SnapshotSocket, Identify, [sndmore]),
@@ -96,16 +95,15 @@ handle_cast({accept_snapshot_new, _FromPid, Identify}, State=#server_state{snaps
   Now = system_time:get_timestamp(),
   NewState = case Now > HeartbeatAt of
     true ->
-      io:format("P:send heartbeat~p.~n", [Identify]),
       ok = erlzmq:send(SnapshotSocket, Identify, [sndmore]),
       ok = erlzmq:send(SnapshotSocket, ?HEARTBEAT_CMD),
-      % io:format("p:Publish heartbeat from publisher.~n",[]),
+      io:format("p:Publish heartbeat from publisher.~n",[]),
       State#server_state{heartbeat_at = (Now + ?HEARTBEAT_DELAY)};
     _ ->
       State
   end,
   
-    timer:sleep(?LOOP_SLEEP),
+  % timer:sleep(?LOOP_SLEEP),
   _Pid = proc_lib:spawn(publisher, accept_snapshot_loop, [self(), Identify]),
   {noreply, NewState};
 
@@ -115,6 +113,8 @@ handle_cast({accept_pub_new, _FromPid},State=#server_state{publisher_socket=Publ
   ok = erlzmq:send(PublisherSocket, <<"We don't want to see this">>),
   ok = erlzmq:send(PublisherSocket, ?ROUTER_WIO, [sndmore]),
   ok = erlzmq:send(PublisherSocket, <<"We would like to see this">>),  
+
+  timer:sleep(?LOOP_SLEEP),
   
   _Pid = proc_lib:spawn(publisher, accept_pub_loop, [self(), PublisherSocket]),
   {noreply, State};
